@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>Lift Log</title>
-<meta name="theme-color" content="#EDEFF0" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="meta-theme" content="#EDEFF0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Lift Log">
@@ -29,12 +28,18 @@
   --tabh:64px; --fs:.9;
 }
 @media (prefers-color-scheme: dark){
-  :root{
+  :root:not([data-theme="light"]){
     color-scheme:dark;
     --bg:#0F1316; --surface:#171C20; --surface-2:#222930; --ink:#E9EDEF; --ink-2:#9BA6AE; --line:#2E363D;
     --accent:#6FA2F2; --accent-ink:#0B1220; --done:#4CC17F; --done-ink:#06210F; --done-bg:#15301F;
     --danger:#FF8176; --warn:#E3B655; --warn-bg:#32280F;
   }
+}
+:root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#0F1316; --surface:#171C20; --surface-2:#222930; --ink:#E9EDEF; --ink-2:#9BA6AE; --line:#2E363D;
+    --accent:#6FA2F2; --accent-ink:#0B1220; --done:#4CC17F; --done-ink:#06210F; --done-bg:#15301F;
+    --danger:#FF8176; --warn:#E3B655; --warn-bg:#32280F;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -209,6 +214,20 @@ function todayStr(){ var d = new Date(); return d.getFullYear() + '-' + String(d
 function dateObj(s){ var p = String(s).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }
 function longDate(s){ return dateObj(s).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }); }
 function unit(){ return S.settings.unit === 'kg' ? 'kg' : 'lb'; }
+var THEMES = ['auto', 'light', 'dark'];
+function themeLabel(){ var m = S.settings.theme; return m === 'light' ? 'Light' : m === 'dark' ? 'Dark' : 'Auto'; }
+function applyTheme(){
+  var m = S.settings.theme, root = document.documentElement;
+  if (m === 'light' || m === 'dark') root.setAttribute('data-theme', m); else root.removeAttribute('data-theme');
+  var dark = m === 'dark' || (m !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  var meta = document.getElementById('meta-theme'); if (meta) meta.setAttribute('content', dark ? '#0F1316' : '#EDEFF0');
+}
+function cycleTheme(){
+  var i = THEMES.indexOf(S.settings.theme || 'auto');
+  S.settings.theme = THEMES[(i + 1) % THEMES.length];
+  applyTheme(); putSettings(); renderWorkouts();
+  toast('Theme: ' + themeLabel());
+}
 var FS_STEPS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5];
 function applyFs(){ document.documentElement.style.setProperty('--fs', String(S.settings.fs || 0.9)); }
 function stepFs(d){
@@ -291,7 +310,7 @@ function banner(){
 function renderWorkouts(){
   var el = $('#view-workouts'), u = unit();
   var html = '<header class="page-head"><div><p class="eyebrow">' + plural(S.workouts.length, 'workout') + '</p><h1>Workouts</h1></div>' +
-    '<div class="tools"><div class="seg" role="group" aria-label="Text size"><button type="button" id="fs-down" data-act="fs" data-d="-1" aria-label="Smaller text">A−</button><button type="button" id="fs-up" data-act="fs" data-d="1" aria-label="Larger text">A+</button></div>' +
+    '<div class="tools"><div class="seg"><button type="button" id="theme-btn" data-act="theme" aria-label="Color theme">' + themeLabel() + '</button></div><div class="seg" role="group" aria-label="Text size"><button type="button" id="fs-down" data-act="fs" data-d="-1" aria-label="Smaller text">A−</button><button type="button" id="fs-up" data-act="fs" data-d="1" aria-label="Larger text">A+</button></div>' +
     '<div class="seg" role="group" aria-label="Weight unit">' +
     '<button type="button" id="unit-lb" data-act="unit" data-v="lb" aria-pressed="' + (u === 'lb') + '">lb</button>' +
     '<button type="button" id="unit-kg" data-act="unit" data-v="kg" aria-pressed="' + (u === 'kg') + '">kg</button></div></div></header>';
@@ -569,6 +588,7 @@ document.addEventListener('click', function(ev){
   var b = ev.target.closest('[data-act]'); if (!b) return;
   var act = b.dataset.act;
   if (act === 'tab') return showTab(b.dataset.t);
+  if (act === 'theme') return cycleTheme();
   if (act === 'fs') return stepFs(Number(b.dataset.d));
   if (act === 'unit') { S.settings.unit = b.dataset.v; renderWorkouts(); putSettings(); return; }
   if (act === 'new') return openEditor(null);
@@ -666,7 +686,8 @@ S.settings = Object.assign({ unit: 'lb' }, lsGet('liftlog.settings', {}));
 var draft = lsGet('liftlog.draft', null);
 if (draft && Array.isArray(draft.exercises) && draft.exercises.length && /^\d{4}-\d{2}-\d{2}$/.test(String(draft.date))) { S.active = draft; S.tab = 'train'; }
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){}); } catch(e){}
-applyFs(); renderAll();
+applyTheme(); applyFs(); renderAll();
+try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){ if (!S.settings.theme || S.settings.theme === 'auto') applyTheme(); }); } catch(e){}
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
 }
