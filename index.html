@@ -95,8 +95,10 @@ h1{font:700 max(9px,calc(44px*var(--fs)))/0.95 var(--font-display);text-transfor
 .notice{background:var(--warn-bg);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:max(9px,calc(14px*var(--fs)));margin-bottom:12px}
 
 .hint{color:var(--ink-2);font-size:max(9px,calc(14px*var(--fs)));margin-bottom:10px}
-.ex-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:2px}
-.count{font:600 max(9px,calc(20px*var(--fs))) var(--font-display);color:var(--ink-2);font-variant-numeric:tabular-nums}
+.ex-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px}
+.ex-tools{display:flex;align-items:center;gap:2px;flex:none}
+.icon-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.count{margin-right:6px;font:600 max(9px,calc(20px*var(--fs))) var(--font-display);color:var(--ink-2);font-variant-numeric:tabular-nums}
 .set-grid{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(0,1fr) 44px;gap:8px;align-items:center}
 .set-head{font:600 max(9px,calc(13px*var(--fs)))/1 var(--font-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-bottom:6px}
 .set-head span:nth-child(2),.set-head span:nth-child(3){text-align:center}
@@ -400,10 +402,11 @@ function saveEditor(){
 
 /* ----- train ----- */
 function saveDraft(){ if (S.active) lsSave('liftlog.draft', S.active); }
-function lastSets(name){
+function lastSets(name, since){
   var key = name.trim().toLowerCase(), cut = S.active ? S.active.date : todayStr(), best = null;
   S.sessions.forEach(function(s){
     if (s.date > cut) return;
+    if (since && (s.completedAt || 0) < since) return;
     var ex = (s.exercises || []).find(function(x){ return x.name.trim().toLowerCase() === key; });
     if (!ex) return;
     if (!best || s.date > best.date || (s.date === best.date && (s.completedAt || 0) > best.at)) best = { sets: ex.sets, date: s.date, unit: s.unit || 'lb', at: s.completedAt || 0 };
@@ -422,8 +425,8 @@ function startWorkout(id){
   S.active = {
     id: uid(), workoutId: w.id, workoutName: w.name, date: todayStr(), startedAt: Date.now(), unit: unit(),
     exercises: w.exercises.map(function(x){
-      var ex = normEx(x);
-      return { name: ex.name, sets: ex.sets.map(function(s){ return { reps: String(s.reps), weight: String(s.weight), done: false }; }) };
+      var ex = normEx(x), l = lastSets(ex.name, w.updatedAt || 0), src = l ? l.sets : ex.sets;
+      return { id: ex.id, name: ex.name, sets: src.map(function(s){ return { reps: String(s.reps), weight: String(s.weight), done: false }; }) };
     })
   };
   saveDraft(); showTab('train');
@@ -440,7 +443,9 @@ function exHtml(ei){
   var a = S.active, ex = a.exercises[ei], u = a.unit;
   var doneN = ex.sets.filter(function(s){ return s.done; }).length;
   var last = lastSets(ex.name);
-  var h = '<section class="card" id="ex-' + ei + '"><div class="ex-head"><h3>' + esc(ex.name) + '</h3><span class="count" id="cnt-' + ei + '">' + doneN + '/' + ex.sets.length + '</span></div>' +
+  var h = '<section class="card" id="ex-' + ei + '"><div class="ex-head"><h3>' + esc(ex.name) + '</h3><div class="ex-tools"><span class="count" id="cnt-' + ei + '">' + doneN + '/' + ex.sets.length + '</span>' +
+    '<button type="button" class="icon-btn" data-act="ex-up" data-ei="' + ei + '" aria-label="Move ' + esc(ex.name) + ' up"' + (ei === 0 ? ' disabled' : '') + '><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>' +
+    '<button type="button" class="icon-btn" data-act="ex-down" data-ei="' + ei + '" aria-label="Move ' + esc(ex.name) + ' down"' + (ei === a.exercises.length - 1 ? ' disabled' : '') + '><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div></div>' +
     (last && last.sets.length > ex.sets.length ? '<p class="hint">Last time you did ' + plural(last.sets.length, 'set') + '.</p>' : '') +
     '<div class="set-grid set-head" aria-hidden="true"><span>Set</span><span>Reps</span><span>' + u + '</span><span></span></div>';
   ex.sets.forEach(function(s, si){ h += setRow(ei, si, s); });
@@ -513,7 +518,17 @@ function finishSession(){
   if (!putSession(s)) { toast('Could not save. This browser may be blocking storage.'); return; }
   S.active = null; lsDel('liftlog.draft');
   S.result = { id: s.id };
+  saveOrder(a);
   renderTrain(true); window.scrollTo(0, 0);
+}
+function saveOrder(a){
+  var w = S.workouts.find(function(x){ return x.id === a.workoutId; }); if (!w) return;
+  var ids = a.exercises.map(function(e){ return e.id; });
+  if (!ids.every(Boolean)) return;
+  var map = {}; w.exercises.forEach(function(x){ map[x.id] = x; });
+  var out = ids.filter(function(id){ return map[id]; }).map(function(id){ return map[id]; });
+  w.exercises.forEach(function(x){ if (ids.indexOf(x.id) < 0) out.push(x); });
+  if (out.length === w.exercises.length && out.some(function(x, i){ return x !== w.exercises[i]; })) putWorkout(Object.assign({}, w, { exercises: out }));
 }
 
 /* ----- history & backup ----- */
@@ -639,6 +654,14 @@ document.addEventListener('click', function(ev){
   if (act === 'discard') {
     if (!armConfirm(b, 'Tap again to discard')) return;
     S.active = null; lsDel('liftlog.draft'); renderTrain(true); return;
+  }
+  if (act === 'ex-up' || act === 'ex-down') {
+    var mi = Number(b.dataset.ei), mj = act === 'ex-up' ? mi - 1 : mi + 1, L = S.active.exercises;
+    if (mj < 0 || mj >= L.length) return;
+    var tmp = L[mi]; L[mi] = L[mj]; L[mj] = tmp;
+    saveDraft(); renderTrain(true);
+    var moved = document.getElementById('ex-' + mj); if (moved && moved.scrollIntoView) moved.scrollIntoView({ block: 'nearest' });
+    return;
   }
   if (act === 'finish') return finishSession();
   if (act === 'result-done') { S.result = null; showTab('history'); return; }
