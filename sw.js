@@ -1,5 +1,5 @@
 /* Lift Log service worker: keeps the app working offline. Bump CACHE when you change files. */
-var CACHE = 'lift-log-v5';
+var CACHE = 'lift-log-v7';
 var CORE = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', function(e){
@@ -18,7 +18,7 @@ self.addEventListener('fetch', function(e){
   if (!ours && url.hostname !== 'fonts.googleapis.com' && url.hostname !== 'fonts.gstatic.com') return;
   e.respondWith(caches.open(CACHE).then(function(cache){
     return cache.match(req).then(function(hit){
-      var net = fetch(req).then(function(res){
+      var net = fetch(req, ours ? { cache: 'no-cache' } : undefined).then(function(res){
         if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
         return res;
       }).catch(function(){ return hit || (req.mode === 'navigate' ? cache.match('index.html') : undefined); });
